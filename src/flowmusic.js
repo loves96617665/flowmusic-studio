@@ -77,7 +77,7 @@ export function buildCoverRecipe({ clipId, instruction, strength, seed, title, g
 
 // ── 基礎請求 ───────────────────────────────────────────────────────────────────
 export async function apiFetch(env, ctx, upstreamHeaders, path, options = {}) {
-  const headers = await upstreamHeaders(env, ctx, options.headers || {});
+  const headers = await upstreamHeaders(env, options.headers || {});
   const url = (env.FLOWMUSIC_BASE_URL || "https://www.flowmusic.app/__api") + path;
   const resp = await fetch(url, { ...options, headers });
   if (!resp.ok) {

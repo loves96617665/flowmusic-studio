@@ -3,7 +3,11 @@
  *   1. 呼叫者 → API Key(env API_KEYS,逗號分隔;Authorization: Bearer <key>)
  *   2. 上游   → flowmusic access token(Supabase JWT,由 refresh token 自動續期)
  *
- * Supabase refresh token 每次使用後會輪替,新值存進 KV(FLOWMUSIC_KV),避免一小時後失效。
+ * Token 策略(無 KV):
+ *   Supabase 每次 refresh 都會輪替 refresh token。這裡**只重用 env 裡同一個
+ *   FLOWMUSIC_REFRESH_TOKEN、不消耗輪替後的繼任者**,只要沒有其他東西推進
+ *   token 鏈(例如同時在瀏覽器登入 flowmusic.app 並讓 session 刷新),token 就
+ *   長期有效;失效時錯誤訊息會明說,回 Vercel Dashboard 貼新的即可。
  */
 
 const SUPABASE_URL = "https://sb.flowmusic.app";
@@ -11,9 +15,6 @@ const ANON_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9." +
   "eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVkbmpjY3FjbWJ4ZWF4YmlkaW5yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE1NjEwNjQsImV4cCI6MjA4NzEzNzA2NH0." +
   "XCXSuL7Th1xHecfRrP0vAOFmKwJxwBqVFLu06SxtVzg";
-
-export const KV_REFRESH_KEY = "flowmusic_refresh_token";
-const KV_ACCESS_KEY = "flowmusic_access_token";
 
 let cachedAccess = null; // { token, expiresAt }
 
@@ -33,8 +34,23 @@ export function checkApiKey(request, env) {
   return keys.includes(provided) ? { ok: true } : { ok: false, reason: "mismatch" };
 }
 
-/** 對單一 refresh token 執行一次 Supabase refresh,回傳 { accessToken, rotatedRefreshToken }。 */
-async function doRefresh(refreshToken) {
+/** 對 env 的 refresh token 執行一次 Supabase refresh,回傳新的 access token。 */
+async function refreshAccessToken(env) {
+  const refreshToken = env.FLOWMUSIC_REFRESH_TOKEN || null;
+  if (!refreshToken) {
+    // 沒有 refresh token 時,退回靜態 access token(短效,約 1 小時)
+    if (env.FLOWMUSIC_ACCESS_TOKEN) {
+      cachedAccess = { token: env.FLOWMUSIC_ACCESS_TOKEN, expiresAt: 0 };
+      return env.FLOWMUSIC_ACCESS_TOKEN;
+    }
+    throw new Error(
+      "No FLOWMUSIC_REFRESH_TOKEN / FLOWMUSIC_ACCESS_TOKEN configured. " +
+        "Set FLOWMUSIC_REFRESH_TOKEN in Vercel dashboard → Project → Settings → " +
+        "Environment Variables (check Production) → Redeploy. " +
+        "Get the value: python scripts/extract_cookie.py cookie.txt"
+    );
+  }
+
   const resp = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
     method: "POST",
     headers: {
@@ -47,82 +63,37 @@ async function doRefresh(refreshToken) {
   });
   const text = await resp.text().catch(() => "");
   if (!resp.ok) {
-    const err = new Error(`Token refresh failed (${resp.status}): ${text.slice(0, 200)}`);
-    err.status = resp.status;
-    err.body = text;
-    throw err;
-  }
-  const data = JSON.parse(text);
-  if (!data.access_token) throw new Error("Token refresh returned no access_token");
-  return { accessToken: data.access_token, rotated: data.refresh_token || null };
-}
-
-async function refreshAccessToken(env, ctx) {
-  let lastErr = null;
-
-  // 1. 依序嘗試 token 來源:KV → env refresh token(不想要 KV 就只設 env)
-  const sources = [];
-  if (env.FLOWMUSIC_KV) sources.push("kv");
-  sources.push("env");
-
-  for (const src of sources) {
-    let refreshToken = null;
-    if (src === "kv") refreshToken = (await env.FLOWMUSIC_KV.get(KV_REFRESH_KEY)) || null;
-    else refreshToken = env.FLOWMUSIC_REFRESH_TOKEN || null;
-    if (!refreshToken) continue;
-    try {
-      const { accessToken, rotated } = await doRefresh(refreshToken);
-      cachedAccess = {
-        token: accessToken,
-        expiresAt: Date.now() + 3600 * 1000 - 60_000, // access token 約 1 小時,提前 1 分鐘刷新
-      };
-      // 輪替後的 refresh token 存 KV(僅當 KV 存在;沒有 KV 就持續重用 env token,不推進鏈)
-      // 直接 await:CF 與 Vercel edge 都相容(不依賴 waitUntil)
-      if (rotated && env.FLOWMUSIC_KV) {
-        await env.FLOWMUSIC_KV.put(KV_REFRESH_KEY, rotated);
-      }
-      return accessToken;
-    } catch (e) {
-      lastErr = e;
-    }
-  }
-
-  // 2. 沒有 refresh token 時,退回靜態 access token(短效,約 1 小時)
-  if (env.FLOWMUSIC_ACCESS_TOKEN) {
-    cachedAccess = { token: env.FLOWMUSIC_ACCESS_TOKEN, expiresAt: 0 };
-    return env.FLOWMUSIC_ACCESS_TOKEN;
-  }
-
-  // 3. 全部失敗 → 明確的診斷訊息
-  if (lastErr) {
-    const text = lastErr.body || "";
+    // refresh_token 被用過/輪替失效 → 需要重新登入拿新 token
     if (/refresh_token_already_used|invalid.*refresh|token.*expired/i.test(text)) {
       throw new Error(
         "FLOWMUSIC_REFRESH_TOKEN invalid/expired (Supabase rotates tokens on use). " +
           "Re-login to flowmusic.app, copy the fresh sb-sb-auth-token.0 cookie, run " +
-          "'python scripts/extract_cookie.py cookie.txt' to get the refresh_token, then set it " +
-          "in the Cloudflare Dashboard (Worker → Settings → Variables and Secrets)."
+          "'python scripts/extract_cookie.py cookie.txt' to get the refresh_token, then " +
+          "update it in the Vercel dashboard (Settings → Environment Variables) and Redeploy."
       );
     }
-    throw lastErr;
+    throw new Error(`Token refresh failed (${resp.status}): ${text.slice(0, 200)}`);
   }
-  const kvOk = !!(env.FLOWMUSIC_KV && (await env.FLOWMUSIC_KV.get(KV_REFRESH_KEY)));
-  throw new Error(
-    "No FLOWMUSIC_REFRESH_TOKEN / FLOWMUSIC_ACCESS_TOKEN configured" +
-      ` (KV binding present: ${!!env.FLOWMUSIC_KV}, KV has refresh token: ${kvOk})`
-  );
+  const data = JSON.parse(text);
+  if (!data.access_token) throw new Error("Token refresh returned no access_token");
+
+  cachedAccess = {
+    token: data.access_token,
+    expiresAt: Date.now() + (data.expires_in || 3600) * 1000 - 60_000, // 提前 1 分鐘刷新
+  };
+  // 注意:刻意不保存 data.refresh_token(輪替後的繼任者)——重用策略,避免推進 token 鏈
+  return data.access_token;
 }
 
 /** 取得目前有效的 flowmusic access token(記憶體快取 + 到期自動續期)。 */
-export async function getAccessToken(env, ctx) {
+export async function getAccessToken(env) {
   if (cachedAccess && cachedAccess.expiresAt > Date.now()) return cachedAccess.token;
-  const token = await refreshAccessToken(env, ctx);
-  return token;
+  return await refreshAccessToken(env);
 }
 
 /** 產生帶 Authorization 的上游請求 headers */
-export async function upstreamHeaders(env, ctx, extra = {}) {
-  const token = await getAccessToken(env, ctx);
+export async function upstreamHeaders(env, extra = {}) {
+  const token = await getAccessToken(env);
   return {
     Authorization: "Bearer " + token,
     Accept: "application/json",

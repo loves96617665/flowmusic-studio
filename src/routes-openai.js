@@ -72,29 +72,13 @@ export function applyBpmDuration({ prompt, lyrics, instrumental, bpm, duration }
 
 /** GET /v1/models — 實時拉上游,快取 5 分鐘 */
 export async function handleModels(env, ctx, upstreamHeaders) {
-  const cacheKey = "models";
-  let models = null;
-  if (env.FLOWMUSIC_KV) {
-    const cached = await env.FLOWMUSIC_KV.get(cacheKey);
-    if (cached) {
-      try {
-        const { at, list } = JSON.parse(cached);
-        if (Date.now() - at < 5 * 60_000) models = list;
-      } catch { /* ignore */ }
-    }
-  }
-  if (!models) {
-    const resp = await fetch(
-      (env.FLOWMUSIC_BASE_URL || "https://www.flowmusic.app/__api") + "/models",
-      { headers: await upstreamHeaders(env, ctx) }
-    );
-    if (!resp.ok) return jsonError("Upstream models failed: " + resp.status, 502, "upstream_error");
-    const data = await resp.json();
-    models = (data.models || []).map((m) => oaiModel(m.public_name));
-    if (env.FLOWMUSIC_KV) {
-      await env.FLOWMUSIC_KV.put(cacheKey, JSON.stringify({ at: Date.now(), list: models }));
-    }
-  }
+  const resp = await fetch(
+    (env.FLOWMUSIC_BASE_URL || "https://www.flowmusic.app/__api") + "/models",
+    { headers: await upstreamHeaders(env) }
+  );
+  if (!resp.ok) return jsonError("Upstream models failed: " + resp.status, 502, "upstream_error");
+  const data = await resp.json();
+  const models = (data.models || []).map((m) => oaiModel(m.public_name));
   return json({ object: "list", data: models });
 }
 
@@ -352,7 +336,7 @@ export async function handleSongs(env, ctx, upstreamHeaders, url) {
   }
   const resp = await fetch(
     (env.FLOWMUSIC_BASE_URL || "https://www.flowmusic.app/__api") + "/clips/auth-user?page=0&page_size=50",
-    { headers: await upstreamHeaders(env, ctx) }
+    { headers: await upstreamHeaders(env) }
   );
   if (!resp.ok) return jsonError("Upstream clips failed: " + resp.status, 502, "upstream_error");
   const data = await resp.json();

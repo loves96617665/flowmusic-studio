@@ -8,7 +8,7 @@
  */
 
 import { json, jsonError } from "./shared.js";
-import { checkApiKey, upstreamHeaders, KV_REFRESH_KEY } from "./auth.js";
+import { checkApiKey, upstreamHeaders } from "./auth.js";
 import {
   handleModels,
   handleChatCompletions,
@@ -69,12 +69,7 @@ export async function route(request, env, ctx) {
     try {
       // 唯讀診斷:不洩漏 token,只回傳狀態(方便遠端定位上游認證問題)
       if (request.method === "GET" && path === "/debug/auth") {
-        let kvToken = null;
-        if (env.FLOWMUSIC_KV) kvToken = (await env.FLOWMUSIC_KV.get(KV_REFRESH_KEY)) || null;
         return json({
-          kv_present: !!env.FLOWMUSIC_KV,
-          kv_has_token: !!kvToken,
-          kv_token_prefix: kvToken ? kvToken.slice(0, 6) + "..." : null,
           env_refresh_present: !!env.FLOWMUSIC_REFRESH_TOKEN,
           env_access_present: !!env.FLOWMUSIC_ACCESS_TOKEN,
         });

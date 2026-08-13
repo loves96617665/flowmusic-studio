@@ -18,7 +18,7 @@ A serverless gateway that wraps the private web API of [Google Flow Music](https
 | 🎚 **Remix & editing** — `extend` / `replace` / `cover` via `audio__render_edit` (recipe graph) | 編輯重混 — extend(延伸)/ replace(區段替換)/ cover(翻唱),走官方 recipe 節點圖 |
 | ✂️ **Stem split** — separate vocals / drums / bass / other tracks | 分軌 — 分離人聲/鼓/貝斯/其他四軌 |
 | 🔑 **API Key auth** — your clients use disposable keys; your upstream session stays secret | API Key 驗證 — 用戶用可拋棄的 key,你的上游登入態不外流 |
-| ♻️ **Auto token refresh** — Supabase refresh token renews the access token; reuse strategy needs no KV | 自動續期 — 用 Supabase refresh token 換 access token;不設 KV 也能長期運作(重用策略) |
+| ♻️ **Auto token refresh** — Supabase refresh token renews the access token (no KV needed) | 自動續期 — 用 Supabase refresh token 換 access token(不需任何 KV) |
 | 🎼 **Lyrics hashing** — byte-for-byte identical UUID v5 (`uuid5(lyrics, b8f9e3a1-...)`) as the official app, verified against real server output | 歌詞哈希 — 與官方完全一致的 UUID v5,已與伺服器實際回傳逐位元組驗證 |
 | 📡 **Native SSE handling** — parses both chat (`part`/`delta`) and tool-call (`message`) stream formats | SSE 解析 — 同時支援聊天與工具調用兩種串流格式 |
 | 🌐 **Web UI** — minimal single-page UI included (audio playback included) | 簡易網頁 UI — 附帶單頁介面(含音訊播放) |
@@ -70,8 +70,7 @@ npm run deploy       # vercel deploy --prod
 curl https://<你的專案>.vercel.app/v1/models -H "Authorization: Bearer sk-flow-aaa"
 ```
 
-> **No-KV 設計(預設)**:不接任何 KV。auth.js 每小時重用同一個 `FLOWMUSIC_REFRESH_TOKEN`,**不消耗**輪替後的繼任者,token 在「沒有其他東西推進鏈」的前提下長期有效(例外:同時在瀏覽器登入 flowmusic.app 並讓 session 刷新會推進鏈)。失效時錯誤訊息會明說,回 Dashboard 貼一次新的即可。
-> 可選:連結 **Vercel KV(Upstash)** 後,程式會自動用 `KV_REST_API_URL` / `KV_REST_API_TOKEN` 持久化輪替 token(程式已支援,預設關閉)。
+> **Token 策略(無 KV)**:auth.js 每小時重用同一個 `FLOWMUSIC_REFRESH_TOKEN`,**不消耗**輪替後的繼任者,token 在「沒有其他東西推進鏈」的前提下長期有效(例外:同時在瀏覽器登入 flowmusic.app 並讓 session 刷新會推進鏈)。失效時錯誤訊息會明說,回 Dashboard 貼一次新的即可。
 
 > **Windows note / Windows 注意**:`extract_cookie.py` 以 `newline=""` 寫檔,避免 token 尾端混入 `\r` 隱藏字元。
 
@@ -181,7 +180,7 @@ All protocol details below were extracted from the official bundle and **verifie
 | `FLOWMUSIC_REFRESH_TOKEN` (secret) | ✅ | Supabase refresh token (long-lived / 長效) |
 | `FLOWMUSIC_ACCESS_TOKEN` (secret) | optional | Short-lived access token fallback (~1h) |
 | `FLOWMUSIC_BASE_URL` | optional | Upstream base, default `https://www.flowmusic.app/__api` |
-| Vercel KV (`KV_REST_API_URL` / `KV_REST_API_TOKEN`) | optional | Persists rotated refresh tokens; without it the reuse strategy applies / 持久化輪替 refresh token;不設則走重用策略 |
+
 
 ## 💻 Local dev / 本地開發
 
