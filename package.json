@@ -1,0 +1,14 @@
+{
+  "name": "flowmusic-studio",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Flow Music Studio — Google Flow Music (Lyria) 音樂生成閘道:Vercel Edge Function + OpenAI 相容 API + API Key 驗證",
+  "type": "module",
+  "scripts": {
+    "dev": "npx -y vercel dev",
+    "deploy": "npx -y vercel deploy --prod",
+    "check": "node --check src/index.js && node --check src/shared.js && node --check src/auth.js && node --check src/flowmusic.js && node --check src/routes-openai.js && node --check api/index.js",
+    "test": "node test-openai.mjs",
+    "test:vercel": "node test-vercel.mjs"
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "rewrites": [
+    {
+      "source": "/v1/:path*",
+      "destination": "/api/index?__path=/v1/:path*"
+    },
+    {
+      "source": "/api/models",
+      "destination": "/api/index?__path=/api/models"
+    },
+    {
+      "source": "/healthz",
+      "destination": "/api/index?__path=/healthz"
+    },
+    {
+      "source": "/health",
+      "destination": "/api/index?__path=/health"
+    },
+    {
+      "source": "/debug/:path*",
+      "destination": "/api/index?__path=/debug/:path*"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Content-Type-Options", "value": "nosniff" }
+      ]
+    }
+  ]
+}

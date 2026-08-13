@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flow Music Studio 🎵</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: #0d1117; color: #e6edf3; }
+  .wrap { max-width: 780px; margin: 0 auto; padding: 24px 16px 80px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .sub { color: #8b949e; font-size: 13px; margin-bottom: 20px; }
+  .card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+  .tabs { display: flex; gap: 8px; margin-bottom: 14px; }
+  .tab { background: #21262d; border: 1px solid #30363d; color: #c9d1d9; border-radius: 6px; padding: 6px 12px; cursor: pointer; font-size: 13px; }
+  .tab.active { background: #238636; color: #fff; border-color: #238636; }
+  label { display: block; font-size: 12px; color: #8b949e; margin: 10px 0 4px; }
+  input[type=text], input[type=password], input[type=number], textarea, select {
+    width: 100%; background: #0d1117; border: 1px solid #30363d; border-radius: 6px;
+    color: #e6edf3; padding: 8px 10px; font-size: 14px;
+  }
+  textarea { min-height: 70px; resize: vertical; }
+  .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .row > div { flex: 1; min-width: 130px; }
+  button {
+    background: #238636; color: #fff; border: none; border-radius: 6px; padding: 10px 16px;
+    font-size: 14px; cursor: pointer; margin-top: 12px;
+  }
+  button:hover { background: #2ea043; }
+  button:disabled { background: #30363d; cursor: not-allowed; }
+  .err { color: #f85149; font-size: 13px; margin-top: 8px; white-space: pre-wrap; }
+  .song { display: flex; gap: 12px; align-items: flex-start; border: 1px solid #30363d; border-radius: 8px; padding: 10px; margin-top: 10px; background: #0d1117; }
+  .song img { width: 56px; height: 56px; border-radius: 6px; object-fit: cover; background: #21262d; }
+  .song .meta { flex: 1; min-width: 0; }
+  .song .t { font-weight: 600; }
+  .song .d { color: #8b949e; font-size: 12px; margin: 2px 0 6px; }
+  audio { width: 100%; height: 32px; }
+  pre.lyrics { font-size: 12px; color: #8b949e; white-space: pre-wrap; margin: 6px 0 0; max-height: 140px; overflow: auto; }
+  .stem { display: inline-block; border: 1px solid #30363d; border-radius: 6px; padding: 4px 8px; margin: 4px 6px 0 0; font-size: 12px; color: #8b949e; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🎵 Flow Music Studio</h1>
+  <div class="sub">Google Flow Music (Lyria 3.5) 生成閘道 — 直接生成 / 聊天 / 編輯重混 / 分軌</div>
+
+  <div class="card">
+    <label>API Key(<code>Authorization: Bearer &lt;key&gt;</code>,存於本機 localStorage)</label>
+    <input type="password" id="apiKey" placeholder="sk-flow-...">
+    <div class="tabs">
+      <button class="tab active" data-tab="generate">✨ 生成</button>
+      <button class="tab" data-tab="chat">💬 聊天</button>
+      <button class="tab" data-tab="edit">🎛 編輯</button>
+      <button class="tab" data-tab="stems">✂️ 分軌</button>
+    </div>
+
+    <!-- 生成 -->
+    <div id="pane-generate">
+      <div class="row">
+        <div><label>模型</label><select id="model"><option>Lyria 3.5</option><option>Lyria 3 Pro</option></select></div>
+        <div><label>數量 (n)</label><input type="number" id="n" value="1" min="1" max="4"></div>
+        <div><label>BPM</label><input type="number" id="bpm" placeholder="例 124"></div>
+        <div><label>長度 (秒)</label><input type="number" id="dur" placeholder="例 180"></div>
+      </div>
+      <label>提示詞(風格/樂器/氛圍)</label>
+      <textarea id="prompt" placeholder="deep sea techno, bioluminescent textures, 124 bpm"></textarea>
+      <label>歌詞(留空 = 純音樂)</label>
+      <textarea id="lyrics" placeholder="[Verse 1]&#10;..."></textarea>
+      <label><input type="checkbox" id="instrumental" checked> 純音樂(Instrumental)</label>
+      <button data-action="generate">✨ 生成</button>
+    </div>
+
+    <!-- 聊天 -->
+    <div id="pane-chat" class="hidden">
+      <label>對話內容</label>
+      <textarea id="chatText" placeholder="做一首日系史詩搖滾,女聲"></textarea>
+      <button data-action="chat">💬 送出</button>
+    </div>
+
+    <!-- 編輯 -->
+    <div id="pane-edit" class="hidden">
+      <div class="row">
+        <div><label>模式</label>
+          <select id="editMode">
+            <option value="extend">extend 延伸</option>
+            <option value="replace">replace 替換區段</option>
+            <option value="cover">cover 翻唱</option>
+          </select>
+        </div>
+        <div><label>來源 clip_id</label><input type="text" id="editClip" placeholder="你的歌曲 id"></div>
+      </div>
+      <label>指示(edit 說明)</label>
+      <textarea id="editInstruction" placeholder="extend: add a dreamy synth outro"></textarea>
+      <div class="row">
+        <div id="wrapExtendS"><label>延伸秒數</label><input type="number" id="extendS" value="30"></div>
+        <div id="wrapExtendFrom"><label>從第幾秒開始</label><input type="number" id="extendFrom" placeholder="留空=自動"></div>
+        <div id="wrapStrength"><label>Cover 強度 (0-1)</label><input type="number" id="strength" value="0.5" step="0.05"></div>
+      </div>
+      <label>新標題(留空 = Untitled Edit)</label>
+      <input type="text" id="editTitle">
+      <button data-action="edit">🎛 執行編輯</button>
+    </div>
+
+    <!-- 分軌 -->
+    <div id="pane-stems" class="hidden">
+      <label>來源 clip_id</label>
+      <input type="text" id="stemClip" placeholder="你的歌曲 id">
+      <button data-action="stems">✂️ 分軌</button>
+    </div>
+
+    <div class="err" id="err"></div>
+  </div>
+
+  <div id="out"></div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const key = localStorage.getItem("flowmusic_api_key");
+if (key) $("apiKey").value = key;
+$("instrumental").addEventListener("change", (e) => { $("lyrics").disabled = e.target.checked; });
+$("lyrics").disabled = $("instrumental").checked;
+
+// tabs
+document.querySelectorAll(".tab").forEach((t) => {
+  t.addEventListener("click", () => {
+    document.querySelectorAll(".tab").forEach((x) => x.classList.remove("active"));
+    t.classList.add("active");
+    ["generate", "chat", "edit", "stems"].forEach((p) => $("pane-" + p).classList.toggle("hidden", p !== t.dataset.tab));
+  });
+});
+
+async function call(path, body) {
+  const apiKey = $("apiKey").value.trim();
+  localStorage.setItem("flowmusic_api_key", apiKey);
+  const res = await fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer " + apiKey },
+    body: JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((data.error && data.error.message) || ("HTTP " + res.status));
+  return data;
+}
+
+function esc(s) { const d = document.createElement("div"); d.textContent = s == null ? "" : String(s); return d.innerHTML; }
+function renderSongs(songs, container) {
+  if (!songs || !songs.length) return;
+  for (const s of songs) {
+    const div = document.createElement("div");
+    div.className = "song";
+    div.innerHTML = `
+      <img src="${s.image_url || ""}" alt="">
+      <div class="meta">
+        <div class="t">${esc(s.title || s.id)}</div>
+        <div class="d">${s.duration ? Math.round(s.duration) + "s" : ""} · ${esc(s.id || "")}</div>
+        ${s.audio_url ? `<audio controls src="${esc(s.audio_url)}"></audio>` : ""}
+        ${s.lyrics ? `<pre class="lyrics">${esc(s.lyrics)}</pre>` : ""}
+      </div>`;
+    container.appendChild(div);
+  }
+}
+
+document.querySelectorAll("button[data-action]").forEach((b) => {
+  b.addEventListener("click", async () => {
+    const action = b.dataset.action;
+    const btn = b; btn.disabled = true; $("err").textContent = ""; $("out").innerHTML = "";
+    try {
+      const model = $("model").value;
+      if (action === "generate") {
+        const prompt = $("prompt").value.trim();
+        if (!prompt) throw new Error("請填寫提示詞");
+        const data = await call("/v1/music/generations", {
+          model, n: parseInt($("n").value, 10) || 1,
+          prompt,
+          instrumental: $("instrumental").checked,
+          bpm: parseInt($("bpm").value, 10) || undefined,
+          duration: parseInt($("dur").value, 10) || undefined,
+          ...(!$("instrumental").checked && $("lyrics").value.trim() && { lyrics: $("lyrics").value.trim() }),
+        });
+        renderSongs(data.data, $("out"));
+      } else if (action === "chat") {
+        const text = $("chatText").value.trim();
+        if (!text) throw new Error("請輸入聊天內容");
+        const data = await call("/v1/chat/completions", { model, messages: [{ role: "user", content: text }] });
+        if (data.choices && data.choices[0]) {
+          const p = document.createElement("div"); p.className = "card";
+          p.textContent = data.choices[0].message.content;
+          $("out").appendChild(p);
+        }
+        renderSongs(data.songs, $("out"));
+      } else if (action === "edit") {
+        const mode = $("editMode").value;
+        const body = {
+          model, mode,
+          clip_id: $("editClip").value.trim(),
+          instruction: $("editInstruction").value.trim(),
+          title: $("editTitle").value.trim() || undefined,
+        };
+        if (!body.clip_id) throw new Error("請填來源 clip_id");
+        if (!body.instruction) throw new Error("請填指示");
+        if (mode === "extend") {
+          body.extend_s = parseInt($("extendS").value, 10) || 30;
+          const from = parseInt($("extendFrom").value, 10);
+          if (Number.isFinite(from)) body.extend_from_s = from;
+        }
+        if (mode === "cover") body.strength = parseFloat($("strength").value) || 0.5;
+        const data = await call("/v1/music/edits", body);
+        renderSongs(data.data, $("out"));
+      } else if (action === "stems") {
+        const clipId = $("stemClip").value.trim();
+        if (!clipId) throw new Error("請填來源 clip_id");
+        const data = await call("/v1/music/stems", { model, clip_id: clipId });
+        const box = document.createElement("div"); box.className = "card";
+        box.innerHTML = `<div style="margin-bottom:6px">分軌結果:</div>` +
+          (data.data || []).map((s) => `
+            <div class="stem">${esc(s.stem_type)} · ${s.url ? `<a href="${esc(s.url)}">播放</a>` : esc(s.id)}</div>`).join("") || "<div>無結果</div>";
+        $("out").appendChild(box);
+        renderSongs([], $("out"));
+      }
+    } catch (e) {
+      $("err").textContent = "❌ " + e.message;
+    } finally {
+      btn.disabled = false;
+    }
+  });
+});
+</script>
+</body>
+</html>
